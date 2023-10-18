@@ -1,14 +1,31 @@
-# ~/pull_request_status_check.sh
+# ~/pull_request_status_check_with_loop.sh
 
 # Fetch Pull Request details from Bitbucket API
 # Assumes BITBUCKET_API_TOKEN and PULL_REQUEST_ID are environment variables
 pull_request_details=$(curl -s -u "${BITBUCKET_API_TOKEN}":x-oauth-basic "https://api.bitbucket.org/2.0/repositories/<username>/<repo_slug>/pullrequests/${PULL_REQUEST_ID}")
 
-# Extract approval status from the Pull Request details
-# The jq command is used to parse JSON and get the 'approved' field
-is_approved=$(echo "${pull_request_details}" | jq '.participants[] | select(.approved == true) | .approved')
+# Check if curl request was successful
+if [ $? -ne 0 ]; then
+  echo "Failed to fetch Pull Request details."
+  exit 1
+fi
 
-# Check if the Pull Request is approved
+# Initialize a variable to keep track of approval status
+is_approved="false"
+
+# Loop through the participants array and find a member with approved status
+for row in $(echo "${pull_request_details}" | jq -r '.participants[] | @base64'); do
+  _jq() {
+    echo ${row} | base64 --decode | jq -r ${1}
+  }
+
+  if [ $(_jq '.approved') == "true" ]; then
+    is_approved="true"
+    break  # Exit loop as we found an approved status
+  fi
+done
+
+# Check for approval status and exit script if not approved
 if [ "${is_approved}" == "true" ]; then
   echo "Pull Request has been approved."
 else
