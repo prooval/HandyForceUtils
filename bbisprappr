@@ -1,0 +1,17 @@
+# ~/pull_request_status_check.sh
+
+# Fetch Pull Request details from Bitbucket API
+# Assumes BITBUCKET_API_TOKEN and PULL_REQUEST_ID are environment variables
+pull_request_details=$(curl -s -u "${BITBUCKET_API_TOKEN}":x-oauth-basic "https://api.bitbucket.org/2.0/repositories/<username>/<repo_slug>/pullrequests/${PULL_REQUEST_ID}")
+
+# Extract approval status from the Pull Request details
+# The jq command is used to parse JSON and get the 'approved' field
+is_approved=$(echo "${pull_request_details}" | jq '.participants[] | select(.approved == true) | .approved')
+
+# Check if the Pull Request is approved
+if [ "${is_approved}" == "true" ]; then
+  echo "Pull Request has been approved."
+else
+  echo "Pull Request is not approved."
+  exit 1  # Exit script with status 1 to indicate failure
+fi
