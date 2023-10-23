@@ -1,0 +1,45 @@
+-- /path/to/your_sql_script.sql
+
+-- Create a stored procedure to get records based on phone numbers as CSV string
+CREATE PROCEDURE GetDoNotCallRecordsCSV
+    @PhoneNumbersCSV VARCHAR(MAX)
+AS
+BEGIN
+    -- Fetch records based on phone numbers
+    SELECT d.Phone_Number, d.Date_Added, d.Employee_Id
+    FROM donotcall d
+    WHERE d.Phone_Number IN (
+        SELECT value FROM STRING_SPLIT(@PhoneNumbersCSV, ',')
+    );
+END
+
+-- /path/to/your_sql_script.sql
+
+-- Create a stored procedure for handling 'donotcall' table records
+CREATE PROCEDURE AddRemoveDoNotCall
+    @PhoneNumber VARCHAR(18),
+    @DateAdded DATETIME,
+    @EmployeeId VARCHAR(5),
+    @Action VARCHAR(10)
+AS
+BEGIN
+    -- Parameter validation
+    IF @Action NOT IN ('add', 'remove')
+    BEGIN
+        PRINT 'Invalid action. Use either "add" or "remove".'
+        RETURN;
+    END
+    
+    -- Insert a new row
+    IF @Action = 'add'
+    BEGIN
+        INSERT INTO donotcall (Phone_Number, Date_Added, Employee_Id)
+        VALUES (@PhoneNumber, @DateAdded, @EmployeeId);
+    END
+    
+    -- Remove an existing row
+    IF @Action = 'remove'
+    BEGIN
+        DELETE FROM donotcall WHERE Phone_Number = @PhoneNumber;
+    END
+END
