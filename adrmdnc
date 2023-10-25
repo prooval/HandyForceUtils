@@ -1,3 +1,17 @@
+-- =============================================
+-- Author: Your Name
+-- Create date: Creation Date
+-- Description: AddRemoveDoNotCall is a stored procedure that performs
+-- both addition and removal of phone numbers in the 'donotcall' table.
+-- This SP takes a CSV list of phone numbers and an EmployeeId, and based
+-- on the action specified ('add' or 'remove'), it will add new or remove existing
+-- phone numbers from the table.
+--
+-- Example Usage:
+-- 1) To add new numbers: EXEC AddRemoveDoNotCall '555-5555,555-5556', 'E123', 'add';
+-- 2) To remove numbers: EXEC AddRemoveDoNotCall '555-5555,555-5556', NULL, 'remove';
+-- =============================================
+
 -- /path/to/your_sql_script.sql
 
 -- Create a stored procedure to get records based on phone numbers as CSV string
