@@ -29,31 +29,36 @@ END
 
 -- /path/to/your_sql_script.sql
 
--- Create a stored procedure for handling 'donotcall' table records
-CREATE PROCEDURE AddRemoveDoNotCall
-    @PhoneNumber VARCHAR(18),
-    @DateAdded DATETIME,
+-- /path/to/your_sql_script.sql
+
+CREATE OR ALTER PROCEDURE AddRemoveDoNotCall
+    @PhoneNumbersCSV VARCHAR(MAX),
     @EmployeeId VARCHAR(5),
     @Action VARCHAR(10)
 AS
 BEGIN
-    -- Parameter validation
-    IF @Action NOT IN ('add', 'remove')
-    BEGIN
-        PRINT 'Invalid action. Use either "add" or "remove".'
-        RETURN;
-    END
+    -- Cleanup
+    SET @EmployeeId = RTRIM(LTRIM(@EmployeeId));
+  
+    DECLARE @CleanedPhoneNumbers TABLE (value VARCHAR(18));
+    INSERT INTO @CleanedPhoneNumbers (value)
+    SELECT RTRIM(LTRIM(value)) FROM STRING_SPLIT(@PhoneNumbersCSV, ',')
+    WHERE value NOT LIKE '%[^0-9]%';
     
-    -- Insert a new row
+    -- Add action
     IF @Action = 'add'
     BEGIN
-        INSERT INTO donotcall (Phone_Number, Date_Added, Employee_Id)
-        VALUES (@PhoneNumber, @DateAdded, @EmployeeId);
+        INSERT INTO donotcall (PhoneNumber, DateAdded, EmployeeId)
+        SELECT value, GETDATE(), @EmployeeId
+        FROM @CleanedPhoneNumbers
+        WHERE NOT EXISTS (SELECT 1 FROM donotcall WHERE PhoneNumber = value);
     END
-    
-    -- Remove an existing row
+
+    -- Remove action
     IF @Action = 'remove'
     BEGIN
-        DELETE FROM donotcall WHERE Phone_Number = @PhoneNumber;
+        DELETE FROM donotcall
+        WHERE PhoneNumber IN (SELECT value FROM @CleanedPhoneNumbers);
     END
 END
+
