@@ -266,3 +266,115 @@ function extractClassDependencies(content) {
 
     return dependencies;
 }
+
+// Assuming buildDependencyGraph() creates a normal dependency graph
+
+/**
+ * Builds a reverse dependency graph.
+ * @param {Map<string, Set<string>>} graph The original dependency graph.
+ * @returns {Map<string, Set<string>>} The reverse dependency graph.
+ */
+function buildReverseDependencyGraph(graph) {
+    const reverseGraph = new Map();
+
+    graph.forEach((dependencies, className) => {
+        dependencies.forEach((dependency) => {
+            if (!reverseGraph.has(dependency)) {
+                reverseGraph.set(dependency, new Set());
+            }
+            reverseGraph.get(dependency).add(className);
+        });
+    });
+
+    return reverseGraph;
+}
+
+/**
+ * Uses DFS to find all classes that, directly or indirectly, depend on the given class.
+ * @param {Map<string, Set<string>>} reverseGraph The reverse dependency graph.
+ * @param {string} targetClass The class to find coverage for.
+ * @returns {Set<string>} Set of class names that depend on the target class.
+ */
+function findClassesWithCoverageFor(reverseGraph, targetClass) {
+    const visited = new Set();
+    const stack = [targetClass];
+    const result = new Set();
+
+    while (stack.length > 0) {
+        const current = stack.pop();
+        if (!visited.has(current)) {
+            visited.add(current);
+            const dependents = reverseGraph.get(current) || [];
+            dependents.forEach(dependent => {
+                result.add(dependent);
+                stack.push(dependent);
+            });
+        }
+    }
+
+    return result;
+}
+
+// Assuming we have the original graph
+// const graph = await buildDependencyGraph();
+// const reverseGraph = buildReverseDependencyGraph(graph);
+// const coverageProviders = findClassesWithCoverageFor(reverseGraph, 'FinancialAccountService');
+
+// Assuming isTestClass() identifies test classes correctly, filter the results to get only test classes
+// const testClassesProvidingCoverage = Array.from(coverageProviders).filter(isTestClass);
+
+// Assuming buildDependencyGraph() creates a normal dependency graph
+
+/**
+ * Builds a reverse dependency graph.
+ * @param {Map<string, Set<string>>} graph The original dependency graph.
+ * @returns {Map<string, Set<string>>} The reverse dependency graph.
+ */
+function buildReverseDependencyGraph(graph) {
+    const reverseGraph = new Map();
+
+    graph.forEach((dependencies, className) => {
+        dependencies.forEach((dependency) => {
+            if (!reverseGraph.has(dependency)) {
+                reverseGraph.set(dependency, new Set());
+            }
+            reverseGraph.get(dependency).add(className);
+        });
+    });
+
+    return reverseGraph;
+}
+
+/**
+ * Uses DFS to find all classes that, directly or indirectly, depend on the given class.
+ * @param {Map<string, Set<string>>} reverseGraph The reverse dependency graph.
+ * @param {string} targetClass The class to find coverage for.
+ * @returns {Set<string>} Set of class names that depend on the target class.
+ */
+function findClassesWithCoverageFor(reverseGraph, targetClass) {
+    const visited = new Set();
+    const stack = [targetClass];
+    const result = new Set();
+
+    while (stack.length > 0) {
+        const current = stack.pop();
+        if (!visited.has(current)) {
+            visited.add(current);
+            const dependents = reverseGraph.get(current) || [];
+            dependents.forEach(dependent => {
+                result.add(dependent);
+                stack.push(dependent);
+            });
+        }
+    }
+
+    return result;
+}
+
+// Assuming we have the original graph
+// const graph = await buildDependencyGraph();
+// const reverseGraph = buildReverseDependencyGraph(graph);
+// const coverageProviders = findClassesWithCoverageFor(reverseGraph, 'FinancialAccountService');
+
+// Assuming isTestClass() identifies test classes correctly, filter the results to get only test classes
+// const testClassesProvidingCoverage = Array.from(coverageProviders).filter(isTestClass);
