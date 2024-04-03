@@ -235,3 +235,34 @@ function isTestClass(className) {
 //     const testClasses = findTestClassesCovering(graph, ['FinancialService']);
 //     console.log('Test classes covering FinancialService:', [...testClasses]);
 // }).catch(error => console.error('Error:', error));
+
+/**
+ * Extracts class names that the given Apex class file content depends on, considering
+ * direct instantiation, static access, inheritance, and interface implementation.
+ * @param {string} content The content of the Apex class file.
+ * @returns {string[]} List of unique class names the file depends on.
+ */
+function extractClassDependencies(content) {
+    const patterns = [
+        /new\s+([A-Za-z0-9_]+)/g, // Matches new instance creation
+        /([A-Za-z0-9_]+)\./g, // Matches static method calls or property access
+        /extends\s+([A-Za-z0-9_]+)/g, // Matches class inheritance
+        /implements\s+([A-Za-z0-9_]+)/g // Matches interface implementation
+    ];
+
+    const allDependencies = new Set();
+
+    patterns.forEach(pattern => {
+        const matches = content.matchAll(pattern);
+        for (const match of matches) {
+            // Match group 1 contains the class/interface name
+            allDependencies.add(match[1]);
+        }
+    });
+
+    // Filter out any known non-class keywords that might have been caught by the patterns
+    const knownNonClasses = new Set(['System', 'String', 'Integer', 'Boolean']); // Add more as necessary
+    const dependencies = [...allDependencies].filter(dep => !knownNonClasses.has(dep));
+
+    return dependencies;
+}
