@@ -378,3 +378,49 @@ function findClassesWithCoverageFor(reverseGraph, targetClass) {
 
 // Assuming isTestClass() identifies test classes correctly, filter the results to get only test classes
 // const testClassesProvidingCoverage = Array.from(coverageProviders).filter(isTestClass);
+
+const fs = require('fs');
+const path = require('path');
+const { ApexParser } = require('@apexdevtools/apex-parser');
+
+/**
+ * Extracts class dependencies from an Apex file using an AST.
+ * @param {string} apexFilePath Path to the Apex class file.
+ * @returns {Set<string>} A set of unique class names that are dependencies.
+ */
+function extractClassDependencies(apexFilePath) {
+    const content = fs.readFileSync(apexFilePath, 'utf8');
+    const parser = new ApexParser();
+    const ast = parser.parse(content);
+
+    const dependencies = new Set();
+
+    // Function to recursively traverse the AST
+    function traverseNode(node) {
+        if (!node) return;
+
+        // Example: Check if node is a type reference (e.g., for new instances or static access)
+        if (node.nodeType === 'TypeReference' && node.name) {
+            dependencies.add(node.name.value);
+        }
+
+        // Traverse children
+        Object.values(node).forEach(value => {
+            if (Array.isArray(value)) {
+                value.forEach(childNode => traverseNode(childNode));
+            } else if (typeof value === 'object') {
+                traverseNode(value);
+            }
+        });
+    }
+
+    traverseNode(ast);
+
+    return dependencies;
+}
+
+// Example usage
+const apexFilePath = path.join(__dirname, 'YourApexClass.cls');
+const dependencies = extractClassDependencies(apexFilePath);
+console.log(dependencies);
+
