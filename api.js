@@ -103,3 +103,53 @@ app.get('/download', (req, res) => {
 app.listen(port, () => {
     console.log(`Example app listening at http://localhost:${port}`);
 });
+
+const express = require('express');
+const cors = require('cors');
+const app = express();
+
+// Configure CORS
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || /^https?:\/\/(?:.+\.)?ftbco\.ftn\.com(?::\d{1,5})?$/.test(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+
+// Enable CORS with the specified options
+app.use(cors(corsOptions));
+
+// Your routes go here
+
+const port = process.env.PORT || 3000; // Replace 3000 with your actual port number
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
+
+const express = require('express');
+const cors = require('cors');
+const app = express();
+
+// Configure CORS
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || /^https?:\/\/(?:.+\.)?ftbco\.ftn\.com(?::\d{1,5})?$/.test(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+
+// Enable CORS with the specified options
+app.use(cors(corsOptions));
+
+// Your routes go here
+
+const port = process.env.PORT || 3000; // Replace 3000 with your actual port number
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
