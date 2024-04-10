@@ -63,3 +63,43 @@ router.get('/api/deployments', async (req, res) => {
 });
 
 module.exports = router;
+
+
+const express = require('express');
+const app = express();
+const port = 3000; // You can choose any port
+const archiver = require('archiver');
+
+// Endpoint to download files as a zip
+app.get('/download', (req, res) => {
+    // Define the path to the directory containing the files you want to zip
+    const directoryPath = 'path/to/your/files';
+
+    // Set the name for the downloaded zip file
+    const zipFileName = 'downloadedFiles.zip';
+
+    // Set headers to inform the browser about the download
+    res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-disposition': `attachment; filename=${zipFileName}`
+    });
+
+    const archive = archiver('zip', { zlib: { level: 9 }}); // Set the compression level
+    archive.on('error', function(err) {
+        throw err;
+    });
+
+    // Pipe archive data to the response
+    archive.pipe(res);
+
+    // Append files from a directory
+    // Alternatively, you can append individual files via `archive.file('path', { name: 'filename' })`
+    archive.directory(directoryPath, false);
+
+    // Finalize the archive (this is where the zip is actually created and sent)
+    archive.finalize();
+});
+
+app.listen(port, () => {
+    console.log(`Example app listening at http://localhost:${port}`);
+});
