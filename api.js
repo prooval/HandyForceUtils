@@ -153,3 +153,18 @@ const port = process.env.PORT || 3000; // Replace 3000 with your actual port num
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+
+app.get('/today-log', (req, res) => {
+  const today = new Date();
+  const dateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const logFileName = `app-${dateString}.log`;
+  const logFilePath = path.join(__dirname, 'logs', logFileName);
+
+  fs.readFile(logFilePath, 'utf-8', (err, data) => {
+      if (err) {
+          console.error("Failed to read log file:", err);
+          return res.status(500).send("Failed to load today's log file");
+      }
+      res.type('text/plain').send(data);
+  });
+});
