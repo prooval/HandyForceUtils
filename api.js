@@ -168,3 +168,55 @@ app.get('/today-log', (req, res) => {
       res.type('text/plain').send(data);
   });
 });
+
+/ server.js
+const express = require('express');
+const archiver = require('archiver');
+const fs = require('fs');
+const path = require('path');
+
+const app = express();
+const port = 3000;
+
+app.get('/download', (req, res) => {
+    const folderPath = req.query.folderPath;
+    const filePattern = req.query.filePattern;
+    
+    // Ensure the folder path and file pattern are provided
+    if (!folderPath || !filePattern) {
+        return res.status(400).send('Missing folder path or file pattern');
+    }
+
+    // Create a zip archive using archiver
+    const archive = archiver('zip', {
+        zlib: { level: 9 } // Set the compression level
+    });
+
+    // Handle archive stream errors
+    archive.on('error', (err) => {
+        throw err;
+    });
+
+    // Pipe the archive data to the response
+    archive.pipe(res);
+
+    // Set the headers for downloading
+    res.attachment('download.zip');
+
+    // Read the directory and add matching files to the archive
+    fs.readdir(folderPath, (err, files) => {
+        if (err) {
+            return res.status(500).send('Failed to read directory');
+        }
+
+        files.forEach(file => {
+            if (file.match(filePattern)) {
+                const filePath = path.join(folderPath, file);
+                archive.file(filePath, { name: file });
+            }
+        });
+
+        // Finalize the archive (this is where the zip is actually created)
+        archive.finalize();
+    });
+});
