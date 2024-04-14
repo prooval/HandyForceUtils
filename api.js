@@ -220,3 +220,8 @@ app.get('/download', (req, res) => {
         archive.finalize();
     });
 });
+
+<div x-data="{ deploymentId: '0Af1n00000BZtvjCAD' }"> <!-- Example ID -->
+    <a x-bind:href="'https://your-instance.lightning.force.com/lightning/setup/DeployStatus/page?address=%2Fchangemgmt%2FmonitorDeploymentsDetails.apexp%3FasyncId=' + deploymentId"
+       target="_blank">Check Deployment Status</a>
+</div>
