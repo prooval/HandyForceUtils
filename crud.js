@@ -78,4 +78,33 @@ const Deployments = {
     }
   };
 
-  
+  const knex = require('knex')(require('./knexfile')); // Make sure your knex configuration is correct
+
+class ArtifactRepository {
+    // Define allowed fields to update
+    allowedUpdateFields = ['name', 'description', 'category']; // Add more fields as needed
+
+    async updateArtifact(artifactId, updateData) {
+        // Sanitize and filter fields
+        const dataToUpdate = {};
+        this.allowedUpdateFields.forEach(field => {
+            if (updateData.hasOwnProperty(field) && updateData[field] != null) {
+                dataToUpdate[field] = updateData[field];
+            }
+        });
+
+        // Check if there are fields to update
+        if (Object.keys(dataToUpdate).length === 0) {
+            return { message: 'No valid fields provided for update', updated: false };
+        }
+
+        // Perform the update
+        await knex('artifacts').where({ id: artifactId }).update(dataToUpdate);
+
+        // Return the updated artifact
+        const updatedArtifact = await knex('artifacts').where({ id: artifactId }).first();
+        return { ...updatedArtifact, updated: true };
+    }
+}
+
+module.exports = ArtifactRepository;
