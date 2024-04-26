@@ -108,3 +108,64 @@ class ArtifactRepository {
 }
 
 module.exports = ArtifactRepository;
+
+const knex = require('knex')(require('./knexfile'));  // Adjust the path as necessary
+
+class Deployments {
+    static async getAllDeploymentsGroupedByArtifact() {
+        try {
+            // Get all artifacts with their deployments and pull requests
+            const artifactsData = await knex('artifacts')
+                .select([
+                    'artifacts.id as artifactId',
+                    'artifacts.name as artifactName',
+                    'deployments.id as deploymentId',
+                    'deployments.name as deploymentName',
+                    'deployments.date as deploymentDate',
+                    'pull_requests.id as prId',
+                    'pull_requests.title as prTitle',
+                    'pull_requests.date as prDate'
+                ])
+                .leftJoin('deployments', 'deployments.artifact_id', 'artifacts.id')
+                .leftJoin('pull_requests', 'pull_requests.artifact_id', 'artifacts.id')
+                .orderBy('artifacts.id');
+
+            // Transform the flat data into nested JSON
+            const result = artifactsData.reduce((acc, item) => {
+                let artifact = acc.find(a => a.artifactId === item.artifactId);
+                if (!artifact) {
+                    artifact = {
+                        artifactId: item.artifactId,
+                        artifactName: item.artifactName,
+                        deployments: [],
+                        pullRequests: []
+                    };
+                    acc.push(artifact);
+                }
+                if (item.deploymentId && !artifact.deployments.find(d => d.deploymentId === item.deploymentId)) {
+                    artifact.deployments.push({
+                        deploymentId: item.deploymentId,
+                        deploymentName: item.deploymentName,
+                        deploymentDate: item.deploymentDate
+                    });
+                }
+                if (item.prId && !artifact.pullRequests.find(pr => pr.prId === item.prId)) {
+                    artifact.pullRequests.push({
+                        prId: item.prId,
+                        prTitle: item.prTitle,
+                        prDate: item.prDate
+                    });
+                }
+                return acc;
+            }, []);
+
+            return result;
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            throw error;
+        }
+    }
+}
+
+module.exports = Deployments;
+
