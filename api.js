@@ -225,3 +225,43 @@ app.get('/download', (req, res) => {
     <a x-bind:href="'https://your-instance.lightning.force.com/lightning/setup/DeployStatus/page?address=%2Fchangemgmt%2FmonitorDeploymentsDetails.apexp%3FasyncId=' + deploymentId"
        target="_blank">Check Deployment Status</a>
 </div>
+
+const artifactService = new ArtifactService();
+
+app.get('/artifact/:artifactName', async (req, res) => {
+  const { artifactName } = req.params;
+  try {
+    const artifactXml = await artifactService.getArtifactByName(artifactName);
+    res.set('Content-Type', 'text/xml');
+    res.send(artifactXml);
+  } catch (error) {
+    res.status(500).send('Error retrieving artifact');
+  }
+});
+
+async function readDirectoryContents(dir, prefix = '') {
+  let result = '';
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      result += `${prefix}${entry.name}/\n`;
+      result += await readDirectoryContents(fullPath, prefix + '  ');
+    } else {
+      const { size } = await fs.stat(fullPath);
+      result += `${prefix}${entry.name} - ${size} bytes\n`;
+    }
+  }
+  return result;
+}
+app.get('/view-artifact-content', async (req, res) => {
+  const folderPath = 'path/to/your/folder'; // Specify the folder path here
+  try {
+    const directoryContents = await readDirectoryContents(folderPath);
+    res.type('text/plain');
+    res.send(directoryContents);
+  } catch (error) {
+    res.status(500).send('Failed to read directory contents');
+  }
+});
+
