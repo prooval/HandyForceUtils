@@ -22,7 +22,7 @@ global class LeadContactMatcher implements Database.Batchable<sObject>, Database
             if (l.FirstName != null) firstNames.add(l.FirstName);
             if (l.LastName != null) lastNames.add(l.LastName);
             if (l.PostalCode != null) postalCodes.add(l.PostalCode);
-            if (l.Street != null) streets.add(l.Street);
+            if (l.Street != null) streets.add(cleanStreetAddress(l.Street));
         }
         
         // Query for potential matching Contacts
@@ -31,14 +31,13 @@ global class LeadContactMatcher implements Database.Batchable<sObject>, Database
             FROM Contact
             WHERE FirstName IN :firstNames
             AND LastName IN :lastNames
-            AND Mailing_Zip_Postal_Code__c IN :postalCodes
-            AND Mailing_Address_Line_1__c IN :streets
+            AND Mailing_Zip_Postal_Code__c LIKE :(postalCodes.contains('_____-____') ? '%' : '%_____%')
         ];
         
         // Create a map for efficient matching
         Map<String, Contact> matchKeyToContact = new Map<String, Contact>();
         for (Contact c : potentialMatches) {
-            String matchKey = (c.FirstName + '|' + c.LastName + '|' + c.Mailing_Zip_Postal_Code__c + '|' + c.Mailing_Address_Line_1__c).toLowerCase();
+            String matchKey = (c.FirstName + '|' + c.LastName + '|' + getFirstFiveDigits(c.Mailing_Zip_Postal_Code__c) + '|' + cleanStreetAddress(c.Mailing_Address_Line_1__c)).toLowerCase();
             matchKeyToContact.put(matchKey, c);
         }
         
@@ -46,7 +45,7 @@ global class LeadContactMatcher implements Database.Batchable<sObject>, Database
         
         for (Lead l : scope) {
             if (l.FirstName != null && l.LastName != null && l.PostalCode != null && l.Street != null) {
-                String leadMatchKey = (l.FirstName + '|' + l.LastName + '|' + l.PostalCode + '|' + l.Street).toLowerCase();
+                String leadMatchKey = (l.FirstName + '|' + l.LastName + '|' + getFirstFiveDigits(l.PostalCode) + '|' + cleanStreetAddress(l.Street)).toLowerCase();
                 if (matchKeyToContact.containsKey(leadMatchKey)) {
                     Contact matchedContact = matchKeyToContact.get(leadMatchKey);
                     l.ConvertedContactId = matchedContact.Id;
@@ -71,6 +70,14 @@ global class LeadContactMatcher implements Database.Batchable<sObject>, Database
         mail.setSubject('Lead Contact Matcher Results');
         mail.setPlainTextBody('The batch process has completed. ' + matchedLeadsCount + ' leads were matched and updated.');
         Messaging.sendEmail(new Messaging.SingleEmailMessage[] { mail });
+    }
+    
+    private String cleanStreetAddress(String street) {
+        return street.endsWith(', ,') ? street.substring(0, street.length() - 3).trim() : street.trim();
+    }
+    
+    private String getFirstFiveDigits(String postalCode) {
+        return postalCode.length() >= 5 ? postalCode.substring(0, 5) : postalCode;
     }
 }
 
