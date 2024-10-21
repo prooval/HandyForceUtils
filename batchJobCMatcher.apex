@@ -21,7 +21,10 @@ global class LeadContactMatcher implements Database.Batchable<sObject>, Database
         for (Lead l : scope) {
             if (l.FirstName != null) firstNames.add(l.FirstName);
             if (l.LastName != null) lastNames.add(l.LastName);
-            if (l.PostalCode != null) postalCodes.add(l.PostalCode);
+            if (l.PostalCode != null) {
+                postalCodes.add(l.PostalCode);
+                postalCodes.add(getFirstFiveDigits(l.PostalCode));
+            }
             if (l.Street != null) streets.add(cleanStreetAddress(l.Street));
         }
         
@@ -31,23 +34,30 @@ global class LeadContactMatcher implements Database.Batchable<sObject>, Database
             FROM Contact
             WHERE FirstName IN :firstNames
             AND LastName IN :lastNames
-            AND Mailing_Zip_Postal_Code__c LIKE :(postalCodes.contains('_____-____') ? '%' : '%_____%')
+            AND (Mailing_Zip_Postal_Code__c IN :postalCodes 
+                 OR Mailing_Zip_Postal_Code__c IN (SELECT PostalCode FROM Lead WHERE Id IN :scope))
         ];
         
         // Create a map for efficient matching
         Map<String, Contact> matchKeyToContact = new Map<String, Contact>();
         for (Contact c : potentialMatches) {
-            String matchKey = (c.FirstName + '|' + c.LastName + '|' + getFirstFiveDigits(c.Mailing_Zip_Postal_Code__c) + '|' + cleanStreetAddress(c.Mailing_Address_Line_1__c)).toLowerCase();
-            matchKeyToContact.put(matchKey, c);
+            String fullZipMatchKey = (c.FirstName + '|' + c.LastName + '|' + c.Mailing_Zip_Postal_Code__c + '|' + cleanStreetAddress(c.Mailing_Address_Line_1__c)).toLowerCase();
+            String partialZipMatchKey = (c.FirstName + '|' + c.LastName + '|' + getFirstFiveDigits(c.Mailing_Zip_Postal_Code__c) + '|' + cleanStreetAddress(c.Mailing_Address_Line_1__c)).toLowerCase();
+            matchKeyToContact.put(fullZipMatchKey, c);
+            matchKeyToContact.put(partialZipMatchKey, c);
         }
         
         List<Lead> leadsToUpdate = new List<Lead>();
         
         for (Lead l : scope) {
             if (l.FirstName != null && l.LastName != null && l.PostalCode != null && l.Street != null) {
-                String leadMatchKey = (l.FirstName + '|' + l.LastName + '|' + getFirstFiveDigits(l.PostalCode) + '|' + cleanStreetAddress(l.Street)).toLowerCase();
-                if (matchKeyToContact.containsKey(leadMatchKey)) {
-                    Contact matchedContact = matchKeyToContact.get(leadMatchKey);
+                String fullZipLeadMatchKey = (l.FirstName + '|' + l.LastName + '|' + l.PostalCode + '|' + cleanStreetAddress(l.Street)).toLowerCase();
+                String partialZipLeadMatchKey = (l.FirstName + '|' + l.LastName + '|' + getFirstFiveDigits(l.PostalCode) + '|' + cleanStreetAddress(l.Street)).toLowerCase();
+                
+                if (matchKeyToContact.containsKey(fullZipLeadMatchKey) || matchKeyToContact.containsKey(partialZipLeadMatchKey)) {
+                    Contact matchedContact = matchKeyToContact.get(fullZipLeadMatchKey) != null ? 
+                                             matchKeyToContact.get(fullZipLeadMatchKey) : 
+                                             matchKeyToContact.get(partialZipLeadMatchKey);
                     l.ConvertedContactId = matchedContact.Id;
                     l.ConvertedAccountId = matchedContact.AccountId;
                     l.Status = 'Closed - Converted';
@@ -80,71 +90,3 @@ global class LeadContactMatcher implements Database.Batchable<sObject>, Database
         return postalCode.length() >= 5 ? postalCode.substring(0, 5) : postalCode;
     }
 }
-
-// ----------
-
-// Query for a sample of Leads
-List<Lead> leadsToProcess = [
-    SELECT Id, FirstName, LastName, PostalCode, Street, ConvertedContactId
-    FROM Lead
-    WHERE CreatedDate >= LAST_N_DAYS:365
-    AND IsConverted = false
-    LIMIT 200
-];
-
-// Collect unique values for each field
-Set<String> firstNames = new Set<String>();
-Set<String> lastNames = new Set<String>();
-Set<String> postalCodes = new Set<String>();
-Set<String> streets = new Set<String>();
-
-for (Lead l : leadsToProcess) {
-    if (l.FirstName != null) firstNames.add(l.FirstName);
-    if (l.LastName != null) lastNames.add(l.LastName);
-    if (l.PostalCode != null) postalCodes.add(l.PostalCode);
-    if (l.Street != null) streets.add(l.Street);
-}
-
-// Query for potential matching Contacts
-List<Contact> potentialMatches = [
-    SELECT Id, FirstName, LastName, Mailing_Zip_Postal_Code__c, Mailing_Address_Line_1__c, AccountId
-    FROM Contact
-    WHERE FirstName IN :firstNames
-    AND LastName IN :lastNames
-    AND Mailing_Zip_Postal_Code__c IN :postalCodes
-    AND Mailing_Address_Line_1__c IN :streets
-];
-
-// Create a map for efficient matching
-Map<String, Contact> matchKeyToContact = new Map<String, Contact>();
-for (Contact c : potentialMatches) {
-    String matchKey = (c.FirstName + '|' + c.LastName + '|' + c.Mailing_Zip_Postal_Code__c + '|' + c.Mailing_Address_Line_1__c).toLowerCase();
-    matchKeyToContact.put(matchKey, c);
-}
-
-// Process Leads and find matches
-List<Lead> leadsToUpdate = new List<Lead>();
-Integer matchedLeadsCount = 0;
-
-for (Lead l : leadsToProcess) {
-    if (l.FirstName != null && l.LastName != null && l.PostalCode != null && l.Street != null) {
-        String leadMatchKey = (l.FirstName + '|' + l.LastName + '|' + l.PostalCode + '|' + l.Street).toLowerCase();
-        if (matchKeyToContact.containsKey(leadMatchKey)) {
-            Contact matchedContact = matchKeyToContact.get(leadMatchKey);
-            l.ConvertedContactId = matchedContact.Id;
-            l.ConvertedAccountId = matchedContact.AccountId;
-            l.Status = 'Closed - Converted';
-            leadsToUpdate.add(l);
-            matchedLeadsCount++;
-        }
-    }
-}
-
-// Output results
-System.debug('Total Leads processed: ' + leadsToProcess.size());
-System.debug('Matched Leads: ' + matchedLeadsCount);
-System.debug('Leads to update: ' + leadsToUpdate.size());
-
-// Uncomment the following line to actually update the Leads
-// update leadsToUpdate;
-
