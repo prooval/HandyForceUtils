@@ -213,3 +213,35 @@ ${fieldMappingsStr}
         return mappingFiles;
     }
 }
+
+/**
+     * Writes the generated mapping files to the specified base directory
+     * @param baseDir The base directory where files should be written
+     * @param objectNames Array of object names to generate mappings for
+     */
+    public async writeMapping(baseDir: string, objectNames: string[]): Promise<void> {
+        try {
+            // Generate the mappings
+            const mappingFiles = await this.generateMapping(objectNames);
+
+            // Process each mapping file
+            for (const file of mappingFiles) {
+                // Construct the full path
+                const fullPath = path.join(baseDir, file.filename);
+                const dirPath = path.dirname(fullPath);
+
+                // Ensure the directory exists
+                await fs.mkdir(dirPath, { recursive: true });
+
+                // Write the file
+                await fs.writeFile(fullPath, file.content, 'utf8');
+
+                console.log(`Successfully written: ${fullPath}`);
+            }
+
+            console.log('All mapping files have been written successfully.');
+        } catch (error) {
+            console.error('Error writing mapping files:', error);
+            throw error;
+        }
+    }
