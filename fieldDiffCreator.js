@@ -2,6 +2,11 @@ import { Connection } from 'jsforce';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+interface ObjectMapping {
+    sourceObjName: string;
+    targetObjName: string;
+}
+
 interface FieldDefinition {
     name: string;
     type: string;
@@ -27,11 +32,6 @@ interface ObjectFieldDiff {
 interface FieldSyncOutput {
     timestamp: string;
     differences: ObjectFieldDiff[];
-}
-
-interface ObjectMapping {
-    sourceObjName: string;
-    targetObjName: string;
 }
 
 export class CrossOrgFieldSync {
@@ -92,17 +92,17 @@ export class CrossOrgFieldSync {
     }
 
     public async identifyFieldsForCreationInTargetOrg(
-        objectNames: string[]
+        objectMappings: ObjectMapping[]
     ): Promise<string> {
         const differences: ObjectFieldDiff[] = [];
 
-        for (const objectName of objectNames) {
+        for (const mapping of objectMappings) {
             try {
-                console.log(`Processing object: ${objectName}`);
+                console.log(`Processing mapping: ${mapping.sourceObjName} -> ${mapping.targetObjName}`);
                 
                 // Get field descriptions from both orgs
-                const sourceDesc = await this.describeObject(this.sourceConn, objectName);
-                const targetDesc = await this.describeObject(this.targetConn, objectName);
+                const sourceDesc = await this.describeObject(this.sourceConn, mapping.sourceObjName);
+                const targetDesc = await this.describeObject(this.targetConn, mapping.targetObjName);
 
                 // Create sets of field names for quick lookup
                 const targetFields = new Set(
@@ -111,22 +111,17 @@ export class CrossOrgFieldSync {
                         .map((f: any) => f.name)
                 );
 
-                // Check if AFS390_SourceSystemId__c exists, if not add it to fields to create
-                if (!targetFields.has('AFS390_SourceSystemId__c')) {
-                    console.log(
-                        `Adding required AFS390_SourceSystemId__c field to ${objectName}`
-                    );
-                    
-                    const sourceSystemIdField: FieldDefinition = {
-                        name: 'AFS390_SourceSystemId__c',
-                        type: 'text',
-                        label: 'Source System Id',
-                        length: 100,
-                        required: false,
-                        unique: true,
-                        externalId: true,
-                        description: 'External ID field for cross-org data migration'
-                    };
+                // Define the source system ID field that should exist in all target objects
+                const sourceSystemIdField: FieldDefinition = {
+                    name: 'AFS390_SourceSystemId__c',
+                    type: 'text',
+                    label: 'Source System Id',
+                    length: 100,
+                    required: false,
+                    unique: true,
+                    externalId: true,
+                    description: 'External ID field for cross-org data migration'
+                };
 
                 // Find fields that exist in source but not in target
                 let fieldsToCreate = sourceDesc.fields
@@ -136,21 +131,24 @@ export class CrossOrgFieldSync {
                                !this.systemFields.has(field.name);
                     })
                     .map((field: any) => this.extractFieldDefinition(field));
-                    
+                
                 // Add AFS390_SourceSystemId__c if it doesn't exist in target
                 if (!targetFields.has('AFS390_SourceSystemId__c')) {
+                    console.log(
+                        `Adding required AFS390_SourceSystemId__c field to ${mapping.targetObjName}`
+                    );
                     fieldsToCreate = [sourceSystemIdField, ...fieldsToCreate];
                 }
 
                 if (fieldsToCreate.length > 0) {
                     differences.push({
-                        objectName,
+                        objectName: mapping.targetObjName,  // Use target object name for creation
                         fieldsToCreate
                     });
                 }
 
             } catch (error) {
-                console.error(`Error processing object ${objectName}:`, error);
+                console.error(`Error processing mapping ${mapping.sourceObjName} -> ${mapping.targetObjName}:`, error);
                 throw error;
             }
         }
