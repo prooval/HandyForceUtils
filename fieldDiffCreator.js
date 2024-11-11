@@ -62,18 +62,198 @@ export class CrossOrgFieldSync {
         return fieldName.endsWith('__c');
     }
 
-    private transformToTargetFieldName(sourceName: string): string {
-        // Remove the __c suffix if it exists
-        const baseName = sourceName.replace(/__c$/, '');
+    private generateFieldMetadataXml(objectName: string, field: FieldDefinition): string {
+        const fieldType = this.getSalesforceFieldType(field);
         
-        // Split by underscore and capitalize each part
-        const parts = baseName.split('_');
-        const capitalizedParts = parts.map(part => 
-            part.charAt(0).toUpperCase() + part.slice(1)
+        let fieldMetadata = `<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>${field.name}</fullName>
+    <label>${field.label}</label>
+    <type>${fieldType}</type>`;
+
+        // Add type-specific elements
+        switch (fieldType) {
+            case 'Text':
+                fieldMetadata += `
+    <length>${field.length || 255}</length>`;
+                break;
+            case 'Number':
+                if (field.precision) {
+                    fieldMetadata += `
+    <precision>${field.precision}</precision>`;
+                }
+                if (field.scale) {
+                    fieldMetadata += `
+    <scale>${field.scale}</scale>`;
+                }
+                break;
+            case 'Picklist':
+                if (field.picklistValues && field.picklistValues.length > 0) {
+                    fieldMetadata += `
+    <valueSet>
+        <valueSetDefinition>`;
+                    field.picklistValues.forEach(value => {
+                        fieldMetadata += `
+            <value>
+                <fullName>${value.value}</fullName>
+                <default>${value.default}</default>
+                <label>${value.label}</label>
+            </value>`;
+                    });
+                    fieldMetadata += `
+        </valueSetDefinition>
+    </valueSet>`;
+                }
+                break;
+            case 'LongTextArea':
+                fieldMetadata += `
+    <length>${field.length || 32768}</length>
+    <visibleLines>3</visibleLines>`;
+                break;
+            case 'Lookup':
+                if (field.referenceTo && field.referenceTo.length > 0) {
+                    fieldMetadata += `
+    <referenceTo>${field.referenceTo[0]}</referenceTo>
+    <relationshipLabel>${field.label}</relationshipLabel>
+    <relationshipName>${this.generateRelationshipName(field.name)}</relationshipName>`;
+                }
+                break;
+        }
+
+        // Add common optional elements
+        if (field.required) {
+            fieldMetadata += `
+    <required>${field.required}</required>`;
+        }
+        if (field.unique) {
+            fieldMetadata += `
+    <unique>${field.unique}</unique>`;
+        }
+        if (field.externalId) {
+            fieldMetadata += `
+    <externalId>${field.externalId}</externalId>`;
+        }
+        if (field.defaultValue !== undefined) {
+            fieldMetadata += `
+    <defaultValue>${field.defaultValue}</defaultValue>`;
+        }
+        if (field.description) {
+            fieldMetadata += `
+    <description>${field.description}</description>`;
+        }
+        if (field.inlineHelpText) {
+            fieldMetadata += `
+    <inlineHelpText>${field.inlineHelpText}</inlineHelpText>`;
+        }
+
+        // Close the root element
+        fieldMetadata += `
+</CustomField>`;
+
+        return fieldMetadata;
+    }
+
+    private getSalesforceFieldType(field: FieldDefinition): string {
+        const typeMapping: { [key: string]: string } = {
+            'string': 'Text',
+            'text': 'Text',
+            'boolean': 'Checkbox',
+            'int': 'Number',
+            'double': 'Number',
+            'currency': 'Currency',
+            'date': 'Date',
+            'datetime': 'DateTime',
+            'email': 'Email',
+            'phone': 'Phone',
+            'url': 'Url',
+            'textarea': 'TextArea',
+            'longtextarea': 'LongTextArea',
+            'picklist': 'Picklist',
+            'multipicklist': 'MultiselectPicklist',
+            'reference': 'Lookup',
+            'percent': 'Percent'
+        };
+
+        return typeMapping[field.type.toLowerCase()] || 'Text';
+    }
+
+    private generateRelationshipName(fieldName: string): string {
+        // Remove AFS390_ prefix and __c suffix
+        let baseName = fieldName
+            .replace(/^AFS390_/, '')
+            .replace(/__c$/, '');
+        
+        // If the field ends with "Id", remove it
+        baseName = baseName.replace(/Id$/, '');
+        
+        return baseName;
+    }
+
+    private async generatePackageXml(
+        differences: ObjectFieldDiff[], 
+        outputFolderPath: string
+    ): Promise<void> {
+        let packageXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <name>CustomField</name>`;
+        
+        // Add all fields
+        differences.forEach(diff => {
+            diff.fieldsToCreate.forEach(field => {
+                packageXml += `
+        <members>${diff.objectName}.${field.name}</members>`;
+            });
+        });
+
+        packageXml += `
+    </types>
+    <types>
+        <name>PermissionSet</name>
+        <members>diffPermissionSet</members>
+    </types>
+    <version>58.0</version>
+</Package>`;
+
+        await fs.writeFile(
+            path.join(outputFolderPath, 'package.xml'),
+            packageXml,
+            'utf8'
         );
-        
-        // Join and add the AFS390 prefix and __c suffix
-        return `AFS390_${capitalizedParts.join('')}__c`;
+    }
+
+    private async generatePermissionSet(
+        differences: ObjectFieldDiff[], 
+        outputFolderPath: string
+    ): Promise<void> {
+        let permissionSet = `<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Permission set for migrated fields</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Migration Diff Permission Set</label>`;
+
+        // Add field permissions
+        differences.forEach(diff => {
+            diff.fieldsToCreate.forEach(field => {
+                permissionSet += `
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>${diff.objectName}.${field.name}</field>
+        <readable>true</readable>
+    </fieldPermissions>`;
+            });
+        });
+
+        permissionSet += `
+</PermissionSet>`;
+
+        const permissionSetPath = path.join(outputFolderPath, 'permissionsets');
+        await fs.mkdir(permissionSetPath, { recursive: true });
+        await fs.writeFile(
+            path.join(permissionSetPath, 'diffPermissionSet.permissionset-meta.xml'),
+            permissionSet,
+            'utf8'
+        );
     }
 
     private extractFieldDefinition(field: any): FieldDefinition {
