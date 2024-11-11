@@ -363,4 +363,32 @@ export class CrossOrgFieldSync {
 
         return outputPath;
     }
+
+    private transformToTargetFieldName(sourceName: string): string {
+        // Handle special case for source system ID field
+        if (sourceName.toLowerCase() === 'afs390_sourcesystemid__c') {
+            return 'AFS390_SOURCESYSTEMID__c';
+        }
+    
+        // Remove the __c suffix if it exists
+        const baseName = sourceName.replace(/__c$/, '');
+        
+        // Remove any existing prefix patterns like AFS390_ if they exist
+        const cleanName = baseName.replace(/^(AFS390_|afs390_)/, '');
+        
+        // Split by underscore and capitalize each part
+        const parts = cleanName.split(/[_\s]+/);  // Split by underscore or spaces
+        const capitalizedParts = parts.map(part => {
+            // Convert the part to uppercase if it's an abbreviation (all caps)
+            if (part.toUpperCase() === part && part.length > 1) {
+                return part.toUpperCase();
+            }
+            // Otherwise capitalize first letter and lowercase the rest
+            return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+        });
+        
+        // Join and add the AFS390 prefix and __c suffix
+        return `AFS390_${capitalizedParts.join('')}__c`;
+    }
 }
+
