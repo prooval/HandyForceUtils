@@ -62,9 +62,23 @@ export class CrossOrgFieldSync {
         return fieldName.endsWith('__c');
     }
 
+    private transformToTargetFieldName(sourceName: string): string {
+        // Remove the __c suffix if it exists
+        const baseName = sourceName.replace(/__c$/, '');
+        
+        // Split by underscore and capitalize each part
+        const parts = baseName.split('_');
+        const capitalizedParts = parts.map(part => 
+            part.charAt(0).toUpperCase() + part.slice(1)
+        );
+        
+        // Join and add the AFS390 prefix and __c suffix
+        return `AFS390_${capitalizedParts.join('')}__c`;
+    }
+
     private extractFieldDefinition(field: any): FieldDefinition {
         const definition: FieldDefinition = {
-            name: field.name,
+            name: this.transformToTargetFieldName(field.name),
             type: field.type,
             label: field.label,
         };
@@ -111,9 +125,10 @@ export class CrossOrgFieldSync {
                         .map((f: any) => f.name)
                 );
 
+                const sourceSystemIdFieldName = 'AFS390_SOURCESYSTEMID__c';
                 // Define the source system ID field that should exist in all target objects
                 const sourceSystemIdField: FieldDefinition = {
-                    name: 'AFS390_SourceSystemId__c',
+                    name: 'AFS390_SOURCESYSTEMID__c',
                     type: 'text',
                     label: 'Source System Id',
                     length: 100,
@@ -133,9 +148,9 @@ export class CrossOrgFieldSync {
                     .map((field: any) => this.extractFieldDefinition(field));
                 
                 // Add AFS390_SourceSystemId__c if it doesn't exist in target
-                if (!targetFields.has('AFS390_SourceSystemId__c')) {
+                if (!targetFields.has(sourceSystemIdFieldName)) {
                     console.log(
-                        `Adding required AFS390_SourceSystemId__c field to ${mapping.targetObjName}`
+                        `Adding required ${sourceSystemIdFieldName} field to ${mapping.targetObjName}`
                     );
                     fieldsToCreate = [sourceSystemIdField, ...fieldsToCreate];
                 }
