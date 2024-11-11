@@ -1,5 +1,7 @@
 import { Connection } from 'jsforce';
 import { FieldDefinition, FieldMetadata } from './types';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 interface MappingFile {
     filename: string;
@@ -19,7 +21,7 @@ interface FieldMapping {
     comment?: string;
 }
 
-export class MappingGenerator {
+export class FieldMappingGenerator {
     private sourceConn: Connection;
     private targetConn: Connection;
     
@@ -66,10 +68,10 @@ export class MappingGenerator {
             };
 
             if (!targetField) {
-                mapping.comment = '// NotInTargetOrg';
+                mapping.comment = 'NotInTargetOrg';
             } else if (targetField.nillable === false) {
                 mapping.required = true;
-                mapping.comment = '// RequiredField';
+                mapping.comment = 'RequiredField';
             }
 
             fieldMappings.push(mapping);
@@ -85,7 +87,7 @@ export class MappingGenerator {
                 fieldMappings.push({
                     sourceField: targetField.name,
                     targetField: targetField.name,
-                    comment: '// NotInSourceOrg'
+                    comment: 'NotInSourceOrg'
                 });
             }
         }
@@ -155,10 +157,18 @@ ${fieldsContent}
     private generateMappingContent(mapping: ObjectMapping): string {
         const fieldMappingsStr = mapping.fieldMappings
             .map(fm => {
-                return `    {
+                let mappingStr = `    {
         sourceField: '${fm.sourceField}',
-        targetField: '${fm.targetField}'${fm.required ? ',\n        required: true' : ''}
-    }${fm.comment ? ` ${fm.comment}` : ''}`;
+        targetField: '${fm.targetField}'`;
+                
+                if (fm.required) {
+                    mappingStr += `,
+        required: true`;
+                }
+
+                mappingStr += ` // ${fm.comment}`;
+                
+                return mappingStr + '    }';
             })
             .join(',\n');
 
@@ -185,22 +195,23 @@ ${fieldMappingsStr}
                 const sourceDesc = await this.describeObject(this.sourceConn, objectName);
                 const targetDesc = await this.describeObject(this.targetConn, objectName);
                 const mapping = await this.generateObjectMapping(objectName);
+                const lowerObjectName = objectName.toLowerCase();
 
                 // Generate source type definition
                 mappingFiles.push({
-                    filename: `${objectName}/source.ts`,
+                    filename: `${lowerObjectName}/source.ts`,
                     content: this.generateTypeDefinitionContent(objectName, sourceDesc.fields)
                 });
 
                 // Generate target type definition
                 mappingFiles.push({
-                    filename: `${objectName}/target.ts`,
+                    filename: `${lowerObjectName}/target.ts`,
                     content: this.generateTypeDefinitionContent(objectName, targetDesc.fields)
                 });
 
                 // Generate mapping configuration
                 mappingFiles.push({
-                    filename: `${objectName}/${objectName}Migration.ts`,
+                    filename: `${lowerObjectName}/${lowerObjectName}migration.ts`,
                     content: this.generateMappingContent(mapping)
                 });
 
@@ -212,28 +223,16 @@ ${fieldMappingsStr}
 
         return mappingFiles;
     }
-}
 
-/**
-     * Writes the generated mapping files to the specified base directory
-     * @param baseDir The base directory where files should be written
-     * @param objectNames Array of object names to generate mappings for
-     */
     public async writeMapping(baseDir: string, objectNames: string[]): Promise<void> {
         try {
-            // Generate the mappings
             const mappingFiles = await this.generateMapping(objectNames);
 
-            // Process each mapping file
             for (const file of mappingFiles) {
-                // Construct the full path
                 const fullPath = path.join(baseDir, file.filename);
                 const dirPath = path.dirname(fullPath);
 
-                // Ensure the directory exists
                 await fs.mkdir(dirPath, { recursive: true });
-
-                // Write the file
                 await fs.writeFile(fullPath, file.content, 'utf8');
 
                 console.log(`Successfully written: ${fullPath}`);
@@ -245,3 +244,4 @@ ${fieldMappingsStr}
             throw error;
         }
     }
+}
