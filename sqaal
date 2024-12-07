@@ -7,70 +7,52 @@ select
     fa.as360_auditdebitenabled__c, fa.as360_autodebitaccount__c, fa.as360_autodebitrouting__c, fa.as360_balloonpayment__c, 
     -- [rest of the existing columns...]
     fa.productcode,
-    -- Add primary owner logic
+    -- Add primary owner logic that returns customer ID
     CASE 
         WHEN fa.productcode IN ('DDA', 'TDA') THEN
-            CASE 
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'SOL') THEN 'SOL'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'PRI') THEN 'PRI'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'CUS') THEN 'CUS'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'BUS') THEN 'BUS'
-                ELSE 'UNKNOWN'
-            END
+            (SELECT TOP 1 r.finserv__relatedaccount__c 
+             FROM ent_dev.as360.finserv__financialaccountrole__c r 
+             WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c
+             AND r.finserv__roletype__c IN ('SOL', 'PRI', 'CUS', 'BUS')
+             ORDER BY CASE r.finserv__roletype__c 
+                        WHEN 'SOL' THEN 1
+                        WHEN 'PRI' THEN 2
+                        WHEN 'CUS' THEN 3
+                        WHEN 'BUS' THEN 4
+                      END)
         WHEN fa.productcode = 'CHD' THEN
-            CASE 
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'PRI') THEN 'PRI'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'SOL') THEN 'SOL'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'COM') THEN 'COM'
-                ELSE 'UNKNOWN'
-            END
+            (SELECT TOP 1 r.finserv__relatedaccount__c 
+             FROM ent_dev.as360.finserv__financialaccountrole__c r 
+             WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c
+             AND r.finserv__roletype__c IN ('PRI', 'SOL', 'COM')
+             ORDER BY CASE r.finserv__roletype__c 
+                        WHEN 'PRI' THEN 1
+                        WHEN 'SOL' THEN 2
+                        WHEN 'COM' THEN 3
+                      END)
         WHEN fa.productcode = 'CON' THEN
-            CASE 
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'PRI') THEN 'PRI'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'MAK') THEN 'MAK'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'COM') THEN 'COM'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'COB') THEN 'COB'
-                ELSE 'UNKNOWN'
-            END
+            (SELECT TOP 1 r.finserv__relatedaccount__c 
+             FROM ent_dev.as360.finserv__financialaccountrole__c r 
+             WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c
+             AND r.finserv__roletype__c IN ('PRI', 'MAK', 'COM', 'COB')
+             ORDER BY CASE r.finserv__roletype__c 
+                        WHEN 'PRI' THEN 1
+                        WHEN 'MAK' THEN 2
+                        WHEN 'COM' THEN 3
+                        WHEN 'COB' THEN 4
+                      END)
         WHEN fa.productcode IN ('FAC', 'DRW') THEN
-            CASE 
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'PRI') THEN 'PRI'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'GEN') THEN 'GEN'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'COM') THEN 'COM'
-                WHEN EXISTS (SELECT 1 FROM ent_dev.as360.finserv__financialaccountrole__c r 
-                           WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c 
-                           AND r.finserv__roletype__c = 'COB') THEN 'COB'
-                ELSE 'UNKNOWN'
-            END
-        ELSE 'UNKNOWN'
+            (SELECT TOP 1 r.finserv__relatedaccount__c 
+             FROM ent_dev.as360.finserv__financialaccountrole__c r 
+             WHERE r.finserv__financialaccount__c = fa.finserv__sourcesystemid__c
+             AND r.finserv__roletype__c IN ('PRI', 'GEN', 'COM', 'COB')
+             ORDER BY CASE r.finserv__roletype__c 
+                        WHEN 'PRI' THEN 1
+                        WHEN 'GEN' THEN 2
+                        WHEN 'COM' THEN 3
+                        WHEN 'COB' THEN 4
+                      END)
+        ELSE NULL
     END as as360_primary_owner
 from SelectedAccounts sa
 join ent_dev.as360.finserv__financialaccountrole__c far on sa.finserv__customerid__c = far.finserv__relatedaccount__c
