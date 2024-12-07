@@ -1,37 +1,72 @@
 with SelectedAccounts AS (
-    select * from ent_dev.as360.account where recordtypeid = '012H0000001DdcEIAS' LIMIT 50000
+    select * from ent_dev.as360.account where recordtypeid = '012H0000001DdcEIAS'
 ),
-RolesWithPriority AS (
-    SELECT 
-        r.finserv__financialaccount__c,
-        r.finserv__relatedaccount__c,
-        r.finserv__roletype__c,
+PrimaryOwners AS (
+    SELECT DISTINCT ON (far.finserv__financialaccount__c)
+        far.finserv__financialaccount__c,
+        far.finserv__relatedaccount__c
+    FROM ent_dev.as360.finserv__financialaccountrole__c far
+    JOIN ent_dev.as360.finserv__financialaccount__c fa 
+        ON fa.finserv__sourcesystemid__c = far.finserv__financialaccount__c
+    WHERE far.finserv__roletype__c IN (
         CASE 
-            WHEN productcode IN ('DDA', 'TDA') THEN
-                CASE r.finserv__roletype__c 
+            WHEN fa.productcode IN ('DDA', 'TDA') THEN
+                CASE far.finserv__roletype__c 
+                    WHEN 'SOL' THEN 'SOL'
+                    WHEN 'PRI' THEN 'PRI'
+                    WHEN 'CUS' THEN 'CUS'
+                    WHEN 'BUS' THEN 'BUS'
+                END
+            WHEN fa.productcode = 'CHD' THEN
+                CASE far.finserv__roletype__c 
+                    WHEN 'PRI' THEN 'PRI'
+                    WHEN 'SOL' THEN 'SOL'
+                    WHEN 'COM' THEN 'COM'
+                END
+            WHEN fa.productcode = 'CON' THEN
+                CASE far.finserv__roletype__c 
+                    WHEN 'PRI' THEN 'PRI'
+                    WHEN 'MAK' THEN 'MAK'
+                    WHEN 'COM' THEN 'COM'
+                    WHEN 'COB' THEN 'COB'
+                END
+            WHEN fa.productcode IN ('FAC', 'DRW') THEN
+                CASE far.finserv__roletype__c 
+                    WHEN 'PRI' THEN 'PRI'
+                    WHEN 'GEN' THEN 'GEN'
+                    WHEN 'COM' THEN 'COM'
+                    WHEN 'COB' THEN 'COB'
+                END
+        END
+    )
+    ORDER BY 
+        far.finserv__financialaccount__c,
+        CASE 
+            WHEN fa.productcode IN ('DDA', 'TDA') THEN
+                CASE far.finserv__roletype__c 
                     WHEN 'SOL' THEN 1
                     WHEN 'PRI' THEN 2
                     WHEN 'CUS' THEN 3
                     WHEN 'BUS' THEN 4
                     ELSE 99
                 END
-            WHEN productcode = 'CHD' THEN
-                CASE r.finserv__roletype__c 
+            WHEN fa.productcode = 'CHD' THEN
+                CASE far.finserv__roletype__c 
                     WHEN 'PRI' THEN 1
                     WHEN 'SOL' THEN 2
                     WHEN 'COM' THEN 3
                     ELSE 99
                 END
-            WHEN productcode = 'CON' THEN
-                CASE r.finserv__roletype__c 
+            WHEN fa.productcode = 'CON' THEN
+                CASE far.finserv__roletype__c 
                     WHEN 'PRI' THEN 1
                     WHEN 'MAK' THEN 2
                     WHEN 'COM' THEN 3
                     WHEN 'COB' THEN 4
                     ELSE 99
                 END
-            WHEN productcode IN ('FAC', 'DRW') THEN
-                CASE r.finserv__roletype__c 
+            WHEN fa.productcode IN ('FAC', 'DRW') THEN
+                CASE far.finserv__roletype__c 
                     WHEN 'PRI' THEN 1
                     WHEN 'GEN' THEN 2
                     WHEN 'COM' THEN 3
@@ -39,27 +74,13 @@ RolesWithPriority AS (
                     ELSE 99
                 END
             ELSE 99
-        END as priority_order
-    FROM ent_dev.as360.finserv__financialaccount__c fa
-    JOIN ent_dev.as360.finserv__financialaccountrole__c r 
-        ON fa.finserv__sourcesystemid__c = r.finserv__financialaccount__c
-),
-PrimaryOwners AS (
-    SELECT 
-        finserv__financialaccount__c,
-        finserv__relatedaccount__c
-    FROM RolesWithPriority
-    WHERE priority_order != 99
-    ORDER BY priority_order
-    LIMIT 1
+        END
 )
 
 select 
     fa.as360_auditdebitenabled__c, 
-    fa.as360_autodebitaccount__c, 
-    fa.as360_autodebitrouting__c, 
-    fa.as360_balloonpayment__c,
-    -- [rest of your existing columns],
+    fa.as360_autodebitaccount__c,
+    -- [rest of your columns],
     po.finserv__relatedaccount__c as as360_primary_owner
 from SelectedAccounts sa
 join ent_dev.as360.finserv__financialaccountrole__c far 
