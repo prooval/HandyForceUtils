@@ -1,0 +1,23 @@
+function generateSalesforceAlias(firstName, lastName, existingAliases = new Set()) {
+    // Remove special characters and spaces
+    const cleanFirst = firstName.replace(/[^a-zA-Z0-9]/g, '');
+    const cleanLast = lastName.replace(/[^a-zA-Z0-9]/g, '');
+    
+    // Start with first initial + up to 7 chars of lastname
+    let alias = (cleanFirst.charAt(0) + cleanLast).substring(0, 8).toLowerCase();
+    
+    // If alias exists, try first two letters + lastname
+    if (existingAliases.has(alias)) {
+        alias = (cleanFirst.substring(0, 2) + cleanLast).substring(0, 8).toLowerCase();
+    }
+    
+    // If still exists, append numbers until unique
+    let counter = 1;
+    let tempAlias = alias;
+    while (existingAliases.has(tempAlias)) {
+        tempAlias = (alias + counter).substring(0, 8);
+        counter++;
+    }
+    
+    return tempAlias;
+}
