@@ -1,0 +1,140 @@
+public class Product2DuplicateIdentifier {
+    
+    public class DuplicateResult {
+        public String problemRecordName;
+        public String problemRecordProductCode;
+        public String problemRecordSubProductCode;
+        public String newRecordName;
+        public String newRecordProductCode;
+        public String newRecordSubProductCode;
+        public DateTime problemRecordCreatedDate;
+        public DateTime newRecordCreatedDate;
+        
+        public DuplicateResult(Product2 problemRecord, Product2 newRecord) {
+            this.problemRecordName = problemRecord.Name;
+            this.problemRecordProductCode = problemRecord.ProductCode;
+            this.problemRecordSubProductCode = problemRecord.sf360_SubProductCode__c;
+            this.newRecordName = newRecord.Name;
+            this.newRecordProductCode = newRecord.ProductCode;
+            this.newRecordSubProductCode = newRecord.sf360_SubProductCode__c;
+            this.problemRecordCreatedDate = problemRecord.CreatedDate;
+            this.newRecordCreatedDate = newRecord.CreatedDate;
+        }
+    }
+    
+    public static void identifyDuplicateProducts() {
+        // Get all Product2 records with required fields
+        List<Product2> allProducts = [
+            SELECT Id, Name, ProductCode, sf360_SubProductCode__c, sf360_SourceSystemId__c, 
+                   CreatedDate, LastModifiedDate 
+            FROM Product2 
+            WHERE Name != NULL 
+            AND ProductCode != NULL 
+            AND sf360_SubProductCode__c != NULL
+            ORDER BY Name, ProductCode, CreatedDate
+        ];
+        
+        System.debug('Total Product2 records retrieved: ' + allProducts.size());
+        
+        // Group products by Name + ProductCode combination
+        Map<String, List<Product2>> productGroups = new Map<String, List<Product2>>();
+        
+        for (Product2 product : allProducts) {
+            String groupKey = product.Name + '|' + product.ProductCode;
+            
+            if (!productGroups.containsKey(groupKey)) {
+                productGroups.put(groupKey, new List<Product2>());
+            }
+            productGroups.get(groupKey).add(product);
+        }
+        
+        System.debug('Product groups created: ' + productGroups.size());
+        
+        // Find duplicates and identify problem records
+        List<DuplicateResult> duplicateResults = new List<DuplicateResult>();
+        Date today = Date.today();
+        
+        for (String groupKey : productGroups.keySet()) {
+            List<Product2> products = productGroups.get(groupKey);
+            
+            // Only process groups with more than one record
+            if (products.size() > 1) {
+                System.debug('Processing group: ' + groupKey + ' with ' + products.size() + ' records');
+                
+                // Find problem records and their corresponding duplicates
+                for (Integer i = 0; i < products.size(); i++) {
+                    Product2 potentialProblemRecord = products[i];
+                    
+                    // Check if this could be a problem record
+                    // Problem record criteria:
+                    // 1. CreatedDate is not today
+                    // 2. SubProductCode appears to be without leading zeros (shorter or single char)
+                    if (potentialProblemRecord.CreatedDate.date() != today) {
+                        
+                        // Look for corresponding records with leading zeros
+                        for (Integer j = 0; j < products.size(); j++) {
+                            if (i != j) {
+                                Product2 potentialNewRecord = products[j];
+                                
+                                // Check if this could be the duplicate with leading zeros
+                                if (isLeadingZeroDuplicate(potentialProblemRecord.sf360_SubProductCode__c, 
+                                                          potentialNewRecord.sf360_SubProductCode__c) &&
+                                    potentialNewRecord.CreatedDate >= potentialProblemRecord.CreatedDate) {
+                                    
+                                    DuplicateResult result = new DuplicateResult(potentialProblemRecord, potentialNewRecord);
+                                    duplicateResults.add(result);
+                                    
+                                    System.debug('Found duplicate pair:');
+                                    System.debug('  Problem Record - Name: ' + potentialProblemRecord.Name + 
+                                               ', ProductCode: ' + potentialProblemRecord.ProductCode + 
+                                               ', SubProductCode: ' + potentialProblemRecord.sf360_SubProductCode__c +
+                                               ', CreatedDate: ' + potentialProblemRecord.CreatedDate);
+                                    System.debug('  New Record - Name: ' + potentialNewRecord.Name + 
+                                               ', ProductCode: ' + potentialNewRecord.ProductCode + 
+                                               ', SubProductCode: ' + potentialNewRecord.sf360_SubProductCode__c +
+                                               ', CreatedDate: ' + potentialNewRecord.CreatedDate);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Output results as JSON
+        String jsonOutput = JSON.serializePretty(duplicateResults);
+        System.debug('=== DUPLICATE RESULTS JSON ===');
+        System.debug(jsonOutput);
+        System.debug('=== END DUPLICATE RESULTS ===');
+        
+        System.debug('Total duplicate pairs found: ' + duplicateResults.size());
+    }
+    
+    // Helper method to determine if two SubProductCodes represent the same value 
+    // where one has leading zeros
+    private static Boolean isLeadingZeroDuplicate(String original, String potential) {
+        if (original == null || potential == null) {
+            return false;
+        }
+        
+        // Remove leading zeros from both to compare
+        String originalTrimmed = original.replaceAll('^0+', '');
+        String potentialTrimmed = potential.replaceAll('^0+', '');
+        
+        // If after removing leading zeros they're the same, and the potential is longer,
+        // then potential likely has leading zeros added
+        return originalTrimmed.equals(potentialTrimmed) && potential.length() > original.length();
+    }
+    
+    // Method to execute the identification process
+    public static void execute() {
+        try {
+            System.debug('Starting Product2 duplicate identification process...');
+            identifyDuplicateProducts();
+            System.debug('Product2 duplicate identification process completed successfully.');
+        } catch (Exception e) {
+            System.debug('Error during duplicate identification: ' + e.getMessage());
+            System.debug('Stack trace: ' + e.getStackTraceString());
+        }
+    }
+}
