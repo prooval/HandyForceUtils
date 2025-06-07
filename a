@@ -1,0 +1,121 @@
+async executeMigration(options: MigrationQueryOptions): Promise<MigrationResult> {
+  const startTime = new Date();
+  const result: MigrationResult = {
+    success: true,
+    recordsProcessed: 0,
+    recordsFailedValidation: 0,
+    errors: [],
+    warnings: [],
+    startTime,
+    endTime: startTime
+  };
+
+  try {
+    // Get target connection first
+    await this.getTargetUserId();
+
+    if (!(await this.beforeMigration())) {
+      throw new Error("Pre-migration checks failed");
+    }
+
+    const query = await this.buildQuery(options);
+    const batchSize = this.config.batchSize || 2000;
+
+    this.logger.logInfo(`BaseMigrationObject -> executeMigration - source dataset query generated: ${query} : batchSize: ${batchSize}`);
+
+    // STEP 1: Accumulate all records first
+    const allRecords: SalesforceRecord<TSource>[] = [];
+    
+    const queryResultStream = await this.sourceConn.bulk2.query(query, {
+      pollTimeout: this.pollTimeout,
+      pollInterval: this.pollInterval
+    });
+
+    // Collect all records into memory
+    const recordCollectionPromise = new Promise<SalesforceRecord<TSource>[]>((resolve, reject) => {
+      queryResultStream
+        .on("record", (record: SalesforceRecord<TSource>) => {
+          const thisRecord = record as SalesforceRecord<TSource>;
+          
+          // Edge case: filter out junk records
+          if (thisRecord.Id !== 'Id') {
+            allRecords.push(thisRecord);
+          }
+        })
+        .on("error", (err) => {
+          this.logger.logError(err as Error);
+          reject(err);
+        })
+        .on("end", () => {
+          this.logger.logInfo(`Collected ${allRecords.length} records from source`);
+          resolve(allRecords);
+        });
+    });
+
+    // Wait for all records to be collected
+    const collectedRecords = await recordCollectionPromise;
+
+    // STEP 2: Split into batches and process sequentially
+    const batches = this.splitIntoBatches(collectedRecords, batchSize);
+    
+    this.logger.logInfo(`Processing ${batches.length} batches sequentially`);
+
+    // Process each batch one at a time
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const batchNumber = i + 1;
+      
+      try {
+        this.logger.logInfo(`Starting batch ${batchNumber}/${batches.length} with ${batch.length} records`);
+        
+        const batchResult = await this.processSingleMigrationBatch(batch, batchNumber);
+        
+        // Update overall results
+        result.recordsProcessed += batchResult.recordsProcessed;
+        result.recordsFailedValidation += batchResult.recordsFailedValidation;
+        
+        // Log progress
+        this.logger.logBatchProgress(this.config.sourceObject, batchNumber, batchResult);
+        this.logger.logProgress(this.config.sourceObject, result.recordsProcessed);
+        
+        this.logger.logInfo(`Completed batch ${batchNumber}/${batches.length}`);
+        
+        // Batch is now complete and can be garbage collected
+        // The batch variable will be cleared in the next iteration
+        
+      } catch (error) {
+        result.success = false;
+        result.errors.push(error as Error);
+        this.logger.logError(error as Error);
+        
+        // Continue with next batch or break if you want to stop on first error
+        // break; // Uncomment to stop on first error
+      }
+    }
+
+    result.endTime = new Date();
+    const finalResult = await this.afterMigration(result);
+    
+    this.logger.logInfo(`Finished processing all ${batches.length} batches; finalResult: ${JSON.stringify(finalResult)}`);
+    
+    return finalResult;
+
+  } catch (error) {
+    result.success = false;
+    result.errors.push(error as Error);
+    result.endTime = new Date();
+    return result;
+  }
+}
+
+// Helper method to split records into batches
+private splitIntoBatches<T>(records: T[], batchSize: number): T[][] {
+  const batches: T[][] = [];
+  
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
+    batches.push(batch);
+  }
+  
+  return batches;
+}
