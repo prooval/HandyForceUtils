@@ -1,0 +1,213 @@
+// Add this property to your class
+private useFileBasedStagingBatches: boolean = false; // Set to true when needed
+
+// STEP 1: Accumulate records (either in memory or file-based staging)
+private async collectAllRecords(query: string): Promise<SalesforceRecord<TSource>[] | string> {
+    if (this.useFileBasedStagingBatches) {
+        return await this.collectRecordsToFile(query);
+    } else {
+        return await this.collectRecordsToMemory(query);
+    }
+}
+
+// Original memory-based collection (unchanged)
+private async collectRecordsToMemory(query: string): Promise<SalesforceRecord<TSource>[]> {
+    let allRecords: SalesforceRecord<TSource>[] = [];
+
+    // Create a promise that will resolve when the entire records are collected and processed
+    this.sourceConn.bulk.pollTimeout = this.pollTimeout;
+    this.sourceConn.bulk.pollInterval = this.pollInterval;
+
+    const queryResultStream = await this.sourceConn.bulk.query(query);
+
+    const recordCollectionPromise = new Promise<SalesforceRecord<TSource>[]>((resolve, reject) => {
+        queryResultStream
+            .on("record", (record: SalesforceRecord<TSource>) => {
+                const thisRecord = record as SalesforceRecord<TSource>;
+                
+                // Edge case: sometimes the cast produces junk records that have "Id" as the id, which is
+                // not a real Id. If we see such records, we will ignore them
+                if (thisRecord.Id !== 'Id') {
+                    allRecords.push(thisRecord);
+                }
+            })
+            .on("error", (err) => {
+                this.logger.logInfo('Exception inside queryResultStream -> on error event');
+                this.logger.logError(err as Error);
+                reject(err);
+            })
+            .on("end", () => {
+                this.logger.logInfo(`Collected ${allRecords.length} records from source`);
+                resolve(allRecords);
+            });
+    });
+
+    return await recordCollectionPromise;
+}
+
+// New file-based collection
+private async collectRecordsToFile(query: string): Promise<string> {
+    const fs = require('fs');
+    const path = require('path');
+    
+    // Create temporary file
+    const tempFilePath = path.join(process.cwd(), `temp_records_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jsonl`);
+    let recordCount = 0;
+
+    this.sourceConn.bulk.pollTimeout = this.pollTimeout;
+    this.sourceConn.bulk.pollInterval = this.pollInterval;
+
+    const queryResultStream = await this.sourceConn.bulk.query(query);
+
+    const recordCollectionPromise = new Promise<string>((resolve, reject) => {
+        const writeStream = fs.createWriteStream(tempFilePath);
+        
+        const cleanup = () => {
+            writeStream.destroy();
+            queryResultStream.removeAllListeners();
+        };
+
+        queryResultStream
+            .on("record", (record: SalesforceRecord<TSource>) => {
+                const thisRecord = record as SalesforceRecord<TSource>;
+                
+                if (thisRecord.Id !== 'Id') {
+                    // Write each record as JSON line
+                    writeStream.write(JSON.stringify(thisRecord) + '\n');
+                    recordCount++;
+                }
+            })
+            .on("error", (err) => {
+                cleanup();
+                this.logger.logInfo('Exception inside queryResultStream -> on error event');
+                this.logger.logError(err as Error);
+                // Try to cleanup temp file on error
+                fs.unlink(tempFilePath, () => {});
+                reject(err);
+            })
+            .on("end", () => {
+                writeStream.end(() => {
+                    this.logger.logInfo(`Collected ${recordCount} records to temp file: ${tempFilePath}`);
+                    resolve(tempFilePath);
+                });
+            });
+    });
+
+    return await recordCollectionPromise;
+}
+
+// File-based batch processor using your Transform stream pattern
+private createFileProcessingStream(tempFilePath: string, batchSize: number): Transform {
+    const fs = require('fs');
+    const readline = require('readline');
+    let currentBatch: SalesforceRecord<TSource>[] = [];
+    let batchNumber = 1;
+    let self = this;
+
+    return new Transform({
+        objectMode: true,
+        async transform(chunk: any, encoding: string, callback: TransformCallback) {
+            try {
+                // This transform will be fed line by line from the file
+                if (chunk) {
+                    const record = JSON.parse(chunk.toString()) as SalesforceRecord<TSource>;
+                    currentBatch.push(record);
+
+                    if (currentBatch.length >= batchSize) {
+                        const currentBatchNumber = Math.floor((batchNumber - 1)) + 1;
+                        this.logger.logInfo(`Processing batch ${currentBatchNumber}`);
+                        
+                        await self.processBatch(currentBatch, currentBatchNumber);
+                        currentBatch = [];
+                        batchNumber++;
+                    }
+                }
+                callback();
+            } catch (error: any) {
+                callback(error);
+            }
+        },
+        async flush(callback: TransformCallback) {
+            try {
+                // Process final partial batch
+                if (currentBatch.length > 0) {
+                    const currentBatchNumber = Math.floor((batchNumber - 1)) + 1;
+                    this.logger.logInfo(`Processing final batch ${currentBatchNumber}`);
+                    await self.processBatch(currentBatch, currentBatchNumber);
+                }
+                callback();
+            } catch (error: any) {
+                callback(error);
+            }
+        }
+    });
+}
+
+// File stream reader (similar to your getFileStream pattern)
+private getRecordFileStream(tempFilePath: string): NodeJS.ReadableStream {
+    const fs = require('fs');
+    const readline = require('readline');
+    const { Readable } = require('stream');
+    
+    const fileStream = fs.createReadStream(tempFilePath);
+    const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+    });
+
+    return Readable.from(rl);
+}
+
+// Updated main processing method
+public async processRecordsInBatches(query: string, batchSize: number): Promise<void> {
+    const collectedData = await this.collectAllRecords(query);
+
+    if (this.useFileBasedStagingBatches) {
+        // File-based processing
+        const tempFilePath = collectedData as string;
+        
+        return new Promise((resolve, reject) => {
+            const processStream = this.createFileProcessingStream(tempFilePath, batchSize);
+            
+            this.getRecordFileStream(tempFilePath)
+                .pipe(processStream)
+                .on('finish', async () => {
+                    try {
+                        // Cleanup temp file
+                        const fs = require('fs').promises;
+                        await fs.unlink(tempFilePath);
+                        this.logger.logInfo(`Cleaned up temp file: ${tempFilePath}`);
+                        resolve();
+                    } catch (error) {
+                        this.logger.logError(`Failed to cleanup temp file: ${tempFilePath}`, error as Error);
+                        resolve(); // Don't fail the whole process for cleanup issues
+                    }
+                })
+                .on('error', async (error) => {
+                    // Cleanup temp file on error
+                    try {
+                        const fs = require('fs').promises;
+                        await fs.unlink(tempFilePath);
+                    } catch {}
+                    reject(error);
+                });
+        });
+    } else {
+        // Memory-based processing (your original workflow)
+        const collectedRecords = collectedData as SalesforceRecord<TSource>[];
+        const totalBatches = Math.ceil(collectedRecords.length / batchSize);
+        this.logger.logInfo(`Processing ${totalBatches} batches sequentially; total collected records: ${collectedRecords.length}`);
+
+        // STEP 2: Process all batches sequentially for optimal memory usage and simplicity of processing
+        for (let i = 0; i < collectedRecords.length; i += batchSize) {
+            const currentBatchNumber = Math.floor(i / batchSize) + 1;
+            const endIndex = Math.min(i + batchSize, collectedRecords.length);
+            const currentBatch = collectedRecords.slice(i, endIndex);
+            
+            await this.processBatch(currentBatch, currentBatchNumber);
+        }
+    }
+}
+
+// Abstract method that you need to implement in your class
+protected abstract async processBatch(batch: SalesforceRecord<TSource>[], batchNumber: number): Promise<void>;
