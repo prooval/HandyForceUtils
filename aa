@@ -24,17 +24,46 @@ private flattenJsonAttributes(record: any): void {
                     
                     // If parsing successful and contains attributes, add parsed keys to original object
                     if (parsedValue && typeof parsedValue === 'object') {
-                        for (const parsedKey in parsedValue) {
-                            if (parsedValue.hasOwnProperty(parsedKey)) {
-                                // Use convention: originalKey.parsedKey
-                                const newKey = `${key}.${parsedKey}`;
-                                record[newKey] = parsedValue[parsedKey];
-                            }
-                        }
+                        this.flattenObjectRecursively(record, parsedValue, key, 2); // Allow 2 levels deep
                     }
                 } catch (error) {
                     // If JSON parsing fails, continue with next key
-                    console.warn(`Failed to parse JSON for key ${key}:`, error);
+                    this.logger.logInfo(`Failed to parse JSON for key ${key}: ${error}`);
+                }
+            }
+        }
+    }
+}
+
+private flattenObjectRecursively(targetRecord: any, sourceObject: any, keyPrefix: string, maxDepth: number): void {
+    if (maxDepth <= 0) return;
+    
+    for (const parsedKey in sourceObject) {
+        if (parsedKey === 'attributes') {
+            continue;
+        }
+        
+        if (sourceObject.hasOwnProperty(parsedKey)) {
+            // Use convention: originalKey.parsedKey
+            const newKey = `${keyPrefix}.${parsedKey}`;
+            
+            if (targetRecord.hasOwnProperty(newKey)) {
+                continue;
+            }
+            
+            const parsedValue = sourceObject[parsedKey];
+            targetRecord[newKey] = parsedValue;
+            
+            // If the parsed value is also a string that could be JSON, try to parse it recursively
+            if (typeof parsedValue === 'string' && parsedValue.includes('attributes')) {
+                try {
+                    const nestedParsedValue = JSON.parse(parsedValue);
+                    if (nestedParsedValue && typeof nestedParsedValue === 'object') {
+                        this.flattenObjectRecursively(targetRecord, nestedParsedValue, newKey, maxDepth - 1);
+                    }
+                } catch (error) {
+                    // If nested JSON parsing fails, continue
+                    this.logger.logInfo(`Failed to parse nested JSON for key ${newKey}: ${error}`);
                 }
             }
         }
